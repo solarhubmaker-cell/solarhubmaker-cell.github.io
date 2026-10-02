@@ -1,44 +1,2247 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Script Auth System</title>
-    <style>
-        body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #1e293b; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); width: 100%; max-width: 400px; text-align: center; }
-        input { width: 100%; padding: 0.75rem; margin: 1rem 0; border: 1px solid #334155; background: #0f172a; color: white; border-radius: 6px; box-sizing: border-box; }
-        button { width: 100%; padding: 0.75rem; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #2563eb; }
-        textarea { width: 100%; height: 120px; margin-top: 1rem; background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 6px; padding: 0.5xl; box-sizing: border-box; display: none; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h2>Script Authentication</h2>
-        <p>인증 키를 입력하세요</p>
-        <input type="text" id="keyInput" placeholder="Enter your key...">
-        <button onclick="verifyKey()">스크립트 확인</button>
-        <textarea id="resultOutput" readonly></textarea>
-    </div>
+-- =====================================================
+-- KEY SYSTEM & LOADER (GitHub Hosting Ready)
+-- =====================================================
+local VALID_KEY = "D5BAA185FFFC429988155A97"
 
-    <script>
-        function verifyKey() {
-            const key = document.getElementById('keyInput').value;
-            const output = document.getElementById('resultOutput');
-            
-            // 테스트용 임시 키 (나중에 디스코드 봇이나 DB랑 연동할 수 있어요)
-            const VALID_KEY = "solar_secret_123";
+-- 키 검증 함수 (필요에 따라 외부 입력을 받거나 기본 키로 작동)
+local function verifyKey(inputKey)
+    return inputKey == VALID_KEY
+end
 
-            if (key === VALID_KEY) {
-                output.style.display = 'block';
-                output.value = 'loadstring(game:HttpGet("https://solarshubmaker-celi.github.io"))() -- 실제 스크립트 내용';
-                alert('인증 성공!');
-            } else {
-                output.style.display = 'none';
-                alert('잘못된 키입니다!');
-            }
-        }
-    </script>
-</body>
-</html>
+-- 기본 제공된 키로 자동 인증 진행
+local enteredKey = "D5BAA185FFFC429988155A97"
+
+if not verifyKey(enteredKey) then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "HydronX Error",
+        Text = "Invalid Script Key!",
+        Duration = 5,
+    })
+    return
+end
+
+-- =====================================================
+-- HydronX V2 beta (Core Script)
+-- =====================================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local GuiService = game:GetService("GuiService")
+local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
+local Drawing = Drawing
+
+local LP = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local repo = "https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Window = Library:CreateWindow({
+    Title = "HydronX V2 beta [Key Verified]",
+    Center = true,
+    AutoShow = true,
+    Resizable = false,
+    NotifySide = "Right",
+    TabPadding = 8,
+    MenuFadeTime = 0.05,
+})
+
+local Options = Library.Options
+local Tabs = {
+    Main = Window:AddTab("Main"),
+    Visuals = Window:AddTab("Visuals"),
+    Misc = Window:AddTab("Misc"),
+    UISettings = Window:AddTab("UI Settings"),
+}
+
+-- =====================================================
+-- SHARED UTILITIES (최적화 핵심)
+-- =====================================================
+local _fcCache = nil
+local _fcCacheAt = 0
+local _fcFailAt = 0
+local function getFighterController()
+    local now = tick()
+    if _fcCache and (now - _fcCacheAt) < 5 then return _fcCache end
+    if (now - _fcFailAt) < 2 then return nil end
+    _fcCacheAt = now
+    local ok, res = pcall(function() return require(LP.PlayerScripts.Controllers.FighterController) end)
+    if ok and res then
+        _fcCache = res
+        return res
+    end
+    _fcFailAt = now
+    return nil
+end
+
+local _utilCache, _enumCache
+local function getUtil()
+    if _utilCache then return _utilCache end
+    pcall(function() _utilCache = require(ReplicatedStorage.Modules.Utility) end)
+    return _utilCache
+end
+local function getEnum()
+    if _enumCache then return _enumCache end
+    pcall(function() _enumCache = require(ReplicatedStorage.Modules.EnumLibrary) end)
+    return _enumCache
+end
+local function toEnum(name)
+    local e = getEnum()
+    if e and e.ToEnum then
+        local ok, v = pcall(function() return e:ToEnum(name) end)
+        if ok and v ~= nil then return v end
+    end
+    return nil
+end
+
+local function encCF(cf)
+    local u = getUtil()
+    if u and u.EncodeCFrame then
+        local ok, v = pcall(function() return u:EncodeCFrame(cf) end)
+        if ok and v ~= nil then return v end
+    end
+    local rx, ry, rz = cf:ToOrientation()
+    return {
+        [utf8.char(0)] = cf.X, [utf8.char(1)] = cf.Y, [utf8.char(2)] = cf.Z,
+        [utf8.char(3)] = rx, [utf8.char(4)] = ry, [utf8.char(5)] = rz,
+    }
+end
+
+local _playersCache, _playersAt = {}, 0
+local function getPlayersCached()
+    local now = tick()
+    if now - _playersAt > 0.25 then
+        _playersCache = Players:GetPlayers()
+        _playersAt = now
+    end
+    return _playersCache
+end
+
+-- =====================================================
+-- IMMUNE / ANTI-MINE / ANTI-KATANA
+-- =====================================================
+SHIELD_CHECK_ENABLED = true
+ANTI_MINE_ENABLED = true
+ANTI_KATANA_ENABLED = true
+
+local TRIPMINE_RANGE = 16
+local trackedMines = {}
+local katanausers = {}
+
+local KATANA_BYPASS = {
+    Slingshot = true, Bow = true, Exogun = true, Spray = true,
+    Flamethrower = true, ["Grenade Launcher"] = true, RPG = true,
+    Crossbow = true, Daggers = true,
+}
+
+local LocalFightState = { IsInShootingRange = false }
+
+function isTargetImmune(playerOrChar)
+    if not SHIELD_CHECK_ENABLED then return false end
+    local char = playerOrChar
+    if typeof(playerOrChar) == "Instance" and playerOrChar:IsA("Player") then
+        char = playerOrChar.Character
+    end
+    if not char then return true end
+    if char:FindFirstChildOfClass("ForceField") then return true end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp and hrp:FindFirstChild("Attachment") then return true end
+    local a = char:GetAttribute("Immune") or char:GetAttribute("Invincible") or char:GetAttribute("IsImmune")
+        or char:GetAttribute("Shielded") or char:GetAttribute("HasShield")
+    if a == true or a == 1 or a == "true" then return true end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local ha = hum:GetAttribute("Immune") or hum:GetAttribute("Invincible") or hum:GetAttribute("IsImmune")
+        if ha == true or ha == 1 then return true end
+        if hum.Health <= 0 then return true end
+    end
+    for _, key in ipairs({
+        "Reflecting", "IsReflecting", "BulletReflect", "Reflect", "Deflecting", "Parrying",
+    }) do
+        local v = char:GetAttribute(key)
+        if v == true or v == 1 or v == "true" then return true end
+        if hum then
+            local hv = hum:GetAttribute(key)
+            if hv == true or hv == 1 then return true end
+        end
+    end
+    return false
+end
+
+getgenv().IsTargetImmune = isTargetImmune
+getgenv().IsImmuneTarget = isTargetImmune
+
+-- [최적화] 30Hz 스로틀
+local _fightLast = 0
+local function refreshLocalFightState()
+    local now = tick()
+    if now - _fightLast < 1/30 then return end
+    _fightLast = now
+    local inRange = false
+    pcall(function()
+        local fc = getFighterController()
+        local lf = fc and fc.LocalFighter
+        if lf and type(lf.Get) == "function" then
+            inRange = lf:Get("IsInShootingRange") == true
+        end
+        if not inRange and lf then
+            local data = rawget(lf, "Data")
+            if type(data) == "table" and rawget(data, "IsInShootingRange") == true then
+                inRange = true
+            end
+        end
+        if not inRange then
+            local entity = LP.Character
+            if entity then
+                local data = rawget(entity, "Data")
+                if type(data) == "table" and rawget(data, "IsInShootingRange") == true then
+                    inRange = true
+                end
+                if entity:GetAttribute("IsInShootingRange") == true then
+                    inRange = true
+                end
+            end
+        end
+    end)
+    LocalFightState.IsInShootingRange = inRange == true
+end
+
+function isLocalInShootingRange()
+    return LocalFightState.IsInShootingRange == true
+end
+getgenv().IsLocalInShootingRange = isLocalInShootingRange
+
+function shouldBlockRageActions()
+    return isLocalInShootingRange()
+end
+
+function canRage()
+    if shouldBlockRageActions() then return false end
+    if isLocalInShootingRange() then return false end
+    return true
+end
+
+-- Tripmine tracking
+do
+    local TAG = "SubspaceTripmine"
+    local function track(tm)
+        if not tm or trackedMines[tm] then return end
+        task.spawn(function()
+            local hitbox = tm:FindFirstChild("Hitbox")
+            if not hitbox then pcall(function() hitbox = tm:WaitForChild("Hitbox", 3) end) end
+            if not hitbox or not hitbox:IsA("BasePart") then
+                if tm:IsA("BasePart") then hitbox = tm end
+            end
+            if not hitbox or not tm.Parent then return end
+            trackedMines[tm] = hitbox
+            tm.Destroying:Connect(function() trackedMines[tm] = nil end)
+        end)
+    end
+
+    pcall(function()
+        for _, tm in ipairs(CollectionService:GetTagged(TAG)) do track(tm) end
+        CollectionService:GetInstanceAddedSignal(TAG):Connect(track)
+        CollectionService:GetInstanceRemovedSignal(TAG):Connect(function(tm) trackedMines[tm] = nil end)
+    end)
+end
+
+local function posNearAnyMine(pos)
+    if not pos then return false end
+    local r2 = TRIPMINE_RANGE * TRIPMINE_RANGE
+    for tm, hitbox in pairs(trackedMines) do
+        if not tm or not tm.Parent or not hitbox or not hitbox.Parent then
+            trackedMines[tm] = nil
+        else
+            local d = pos - hitbox.Position
+            if d:Dot(d) <= r2 then return true end
+        end
+    end
+    return false
+end
+
+function isTargetNearTripmine(target)
+    if not ANTI_MINE_ENABLED then return false end
+    if not target then return false end
+    local char = target
+    if typeof(target) == "Instance" and target:IsA("Player") then char = target.Character end
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("HitboxBody")
+    if not hrp then return false end
+    return posNearAnyMine(hrp.Position)
+end
+getgenv().IsTargetNearTripmine = isTargetNearTripmine
+
+-- Katana deflect hook
+task.spawn(function()
+    local attempts = 0
+    while attempts < 20 do
+        local katana
+        pcall(function()
+            local m = LP.PlayerScripts.Modules.Items:FindFirstChild("Katana", true)
+            if m then katana = require(m) end
+        end)
+        if not katana then
+            pcall(function()
+                for _, m in pairs(LP.PlayerScripts:GetDescendants()) do
+                    if m.Name == "Katana" and m:IsA("ModuleScript") then
+                        local ok, res = pcall(require, m)
+                        if ok and type(res) == "table" and res.StartAiming then
+                            katana = res; break
+                        end
+                    end
+                end
+            end)
+        end
+        if katana and type(katana) == "table" and katana.StartAiming then
+            local prev = katana.StartAiming
+            katana.StartAiming = function(self, force)
+                local fighter = self.ClientFighter
+                local player = fighter and fighter.Player
+                if player then
+                    katanausers[player] = true
+                    local dur = (self.Info and self.Info.DeflectDuration) or 0.6
+                    task.delay(dur, function() katanausers[player] = nil end)
+                end
+                return prev(self, force)
+            end
+            break
+        end
+        attempts = attempts + 1
+        task.wait(1)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p) katanausers[p] = nil end)
+
+-- [최적화] isKatanaDeflecting 캐시
+local _katCache = {}
+local _katCacheAt = {}
+function isKatanaDeflecting(player)
+    if not player then return false end
+    if katanausers[player] == true then return true end
+    local now = tick()
+    if _katCache[player] ~= nil and (now - (_katCacheAt[player] or 0)) < 0.1 then
+        return _katCache[player]
+    end
+    _katCacheAt[player] = now
+    local result = false
+    local char = player.Character
+    if char then
+        local ok, def = pcall(function()
+            return char:GetAttribute("Deflecting") or char:GetAttribute("IsDeflecting")
+        end)
+        if ok and def then
+            result = true
+        else
+            for _, c in ipairs(char:GetChildren()) do
+                if string.lower(c.Name):find("deflect") then result = true; break end
+            end
+        end
+    end
+    _katCache[player] = result
+    return result
+end
+getgenv().InstanceIsKatanaDeflecting = isKatanaDeflecting
+getgenv().IsKatanaDeflecting = isKatanaDeflecting
+
+function isLocalWeaponKatanaBypass()
+    local name
+    local fc = getFighterController()
+    local item = fc and fc.LocalFighter and fc.LocalFighter.EquippedItem
+    if item then
+        name = item.Name
+        if type(item.Get) == "function" then name = item:Get("Name") or name end
+    end
+    return name and KATANA_BYPASS[name] == true
+end
+
+function shouldIgnoreKatanaTarget(player)
+    if not ANTI_KATANA_ENABLED then return false end
+    if not player then return false end
+    if isLocalWeaponKatanaBypass() then return false end
+    if isKatanaDeflecting(player) then return true end
+    return false
+end
+getgenv().ShouldIgnoreKatanaTarget = shouldIgnoreKatanaTarget
+getgenv().AntiKatana = { Enabled = true }
+
+-- =====================================================
+-- CONFIG & STATE
+-- =====================================================
+local Config = { HitPart = "Head" }
+
+local Silent = {
+    Enabled = false, ShowFOV = false, FOV = 300,
+    TeamCheck = true, WallCheck = false, Keybind = "None", AutoShoot = false,
+}
+local Aimbot = {
+    Enabled = false, ShowFOV = false, FOV = 150,
+    TeamCheck = true, WallCheck = false, HitPart = "Head",
+    Smoothness = 0.35, Strength = 100, Keybind = "None",
+}
+local Trigger = {
+    Enabled = false, ReactionTime = 50, TeamCheck = true,
+    Keybind = "None", LastFire = 0, Armed = false, ArmedAt = 0,
+}
+local Fly = {
+    Enabled = false, Speed = 60, Conn = nil,
+    Attachment = nil, LinearVelocity = nil, AlignOrientation = nil,
+    MobileTouchId = nil, MobileOrigin = nil, MobileCurrent = nil, MobileVerticalUp = false,
+}
+local Unlocker = { Active = false, RestoreFns = {} }
+local ESP = {
+    Enabled = false, Box = true, Skeleton = true, Health = true,
+    Tool = true, Name = true, Distance = true, TeamCheck = true,
+    MaxDistance = 1000,
+    VisibleColor = Color3.fromRGB(0, 255, 0),
+    HiddenColor = Color3.fromRGB(255, 0, 0),
+    UseVisibilityColor = true,
+    Objects = {},
+}
+local RankCharm = {
+    Enabled = false, Weapon = nil, Season = nil, Rank = nil, Leaderboard = nil,
+    SelectedCharmByWeapon = {}, RankOverrides = {},
+    CatalogCache = {}, Ready = false,
+}
+local Ragebot = {
+    Enabled = false, TeamCheck = true, ImmuneCheck = true,
+    AntiKatana = true, AntiMine = true, Desync = true,
+    HeightOffset = 2.5, Interval = 0, Keybind = "None",
+    CurrentTarget = nil, LastFire = 0,
+    SavedCF = nil, SavedVel = nil, SavedRotVel = nil,
+}
+
+local HIT_PART_LIST = {
+    "Head", "HitboxHead", "HitboxHeadSmall", "HumanoidRootPart",
+    "UpperTorso", "LowerTorso", "Torso",
+}
+
+-- UseItem remote
+local UseItem = ReplicatedStorage.Remotes.Replication.Fighter.UseItem
+local _useItemFail = 0
+local function getUseItem()
+    if UseItem and UseItem.Parent then return UseItem end
+    local now = tick()
+    if now - _useItemFail < 1 then return nil end
+    _useItemFail = now
+    pcall(function() UseItem = ReplicatedStorage.Remotes.Replication.Fighter.UseItem end)
+    return UseItem
+end
+
+local function itemId(item)
+    if not item then return nil end
+    local ok, id = pcall(function() return item:Get("ObjectID") end)
+    if ok and id ~= nil then return id end
+    local data = rawget(item, "Data")
+    if type(data) == "table" and data.ObjectID ~= nil then return data.ObjectID end
+    return rawget(item, "ObjectID")
+end
+
+local function getItem()
+    local fc = getFighterController()
+    local lf = fc and fc.LocalFighter
+    return lf and lf.EquippedItem or nil
+end
+
+local function isEnemy(plr, teamCheck)
+    if not plr or plr == LP then return false end
+    local ch = plr.Character
+    if not ch then return false end
+    local hum = ch:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not teamCheck then return true end
+    local lTeamId = LP:GetAttribute("TeamID")
+    local tTeamId = plr:GetAttribute("TeamID")
+    if lTeamId ~= nil and tTeamId ~= nil and lTeamId == tTeamId then return false end
+    local lCharTeam = LP.Character and LP.Character:GetAttribute("TeamID")
+    local tCharTeam = ch:GetAttribute("TeamID")
+    if lCharTeam ~= nil and tCharTeam ~= nil and lCharTeam == tCharTeam then return false end
+    if LP.Team and plr.Team and LP.Team == plr.Team then return false end
+    return true
+end
+
+local function resolveHitPart(char, partName)
+    if not char then return nil end
+    partName = partName or "Head"
+    local p = char:FindFirstChild(partName)
+    if p and p:IsA("BasePart") then return p end
+    for _, n in ipairs({"Head", "HitboxHead", "HitboxHeadSmall", "HumanoidRootPart", "UpperTorso", "Torso", "LowerTorso"}) do
+        local f = char:FindFirstChild(n)
+        if f and f:IsA("BasePart") then return f end
+    end
+    return nil
+end
+
+local WC_PARAMS = RaycastParams.new()
+WC_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
+WC_PARAMS.IgnoreWater = true
+
+local function wallCheckPass(part, excludeChar)
+    if not part then return false end
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+    local filter = {}
+    if LP.Character then filter[#filter+1] = LP.Character end
+    if excludeChar then filter[#filter+1] = excludeChar end
+    filter[#filter+1] = cam
+    WC_PARAMS.FilterDescendantsInstances = filter
+    local origin = cam.CFrame.Position
+    local result = workspace:Raycast(origin, part.Position - origin, WC_PARAMS)
+    return result == nil
+end
+
+local function getBestTargetFOV(fov, teamCheck, wallCheck, hitPart)
+    local cam = workspace.CurrentCamera
+    if not cam then return nil end
+    local vp = cam.ViewportSize
+    local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+    local best, bestDist = nil, fov
+    local players = getPlayersCached()
+    for i = 1, #players do
+        local plr = players[i]
+        if isEnemy(plr, teamCheck) and not isTargetImmune(plr) then
+            local char = plr.Character
+            local part = resolveHitPart(char, hitPart)
+            if part then
+                local sp, on = cam:WorldToViewportPoint(part.Position)
+                if on and sp.Z > 0 then
+                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                    if d < bestDist then
+                        if (not wallCheck) or wallCheckPass(part, char) then
+                            bestDist = d
+                            best = part
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function buildCameraData(origin, part)
+    local cf = part.CFrame
+    return {
+        [utf8.char(1)] = {
+            [utf8.char(0)] = encCF(CFrame.lookAt(origin, part.Position)),
+            [utf8.char(1)] = encCF(cf),
+            [utf8.char(2)] = part,
+            [utf8.char(3)] = encCF(cf:ToObjectSpace(CFrame.new(part.Position))),
+        },
+    }
+end
+
+-- [최적화] Entity 태그 60ms 캐시
+local _entityCache, _entityAt = {}, 0
+local function getEntityTagged()
+    local now = tick()
+    if now - _entityAt > 0.06 then
+        _entityCache = CollectionService:GetTagged("Entity")
+        _entityAt = now
+    end
+    return _entityCache
+end
+
+local function silentTarget()
+    local cam = workspace.CurrentCamera
+    if not cam then return nil end
+    local vp = cam.ViewportSize
+    local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+    local bestPart, bestDist = nil, Silent.FOV
+    local myChar = LP.Character
+    for _, entity in ipairs(getEntityTagged()) do
+        if entity ~= myChar then
+            local plr = Players:GetPlayerFromCharacter(entity)
+            if not plr or isEnemy(plr, Silent.TeamCheck) then
+                if not plr or not isTargetImmune(plr) then
+                    local part = entity:FindFirstChild(Config.HitPart, true)
+                    if part and part:IsA("BasePart") then
+                        if not Silent.WallCheck or wallCheckPass(part, entity) then
+                            local sp, on = cam:WorldToViewportPoint(part.Position)
+                            if on then
+                                local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                                if d < bestDist then bestDist, bestPart = d, part end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestPart
+end
+
+local function fireSilentAt(part)
+    if not part or not part.Parent then return end
+    local item = getItem()
+    if not item then return end
+    local oid = itemId(item)
+    if not oid then return end
+    local ui = getUseItem()
+    if not ui or not ui.Parent then return end
+    local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local data = buildCameraData(root.Position, part)
+    if not data then return end
+    local startEnum = toEnum("StartShooting")
+    if startEnum then
+        pcall(function() ui:FireServer(oid, startEnum, data, nil) end)
+    end
+end
+
+-- Silent Aim FireServer hook
+local origFireServer = UseItem.FireServer
+local hookedFireServer
+hookedFireServer = hookfunction(origFireServer, newcclosure(function(self, objID, enumVal, camdata, extra)
+    local startEnum = toEnum("StartShooting")
+    if enumVal == startEnum and Silent.Enabled then
+        local t = silentTarget()
+        local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if root and t then camdata = buildCameraData(root.Position, t) end
+    end
+    return hookedFireServer(self, objID, enumVal, camdata, extra)
+end))
+
+-- GameplayUtility hook
+task.spawn(function()
+    local ok, gu = pcall(function() return require(ReplicatedStorage.Modules.GameplayUtility) end)
+    if not ok or not gu then return end
+    local orig = gu.GetEntitiesFromRaycast
+    if type(orig) ~= "function" then return end
+    gu.GetEntitiesFromRaycast = function(self, envID, params, origin, dir, maxDist, ...)
+        if Silent.Enabled then
+            local t = silentTarget()
+            if t then
+                local dist = (t.Position - origin).Magnitude
+                dir = (t.Position - origin).Unit
+                if dist > maxDist then maxDist = dist + 5 end
+            end
+        end
+        return orig(self, envID, params, origin, dir, maxDist, ...)
+    end
+end)
+
+-- FOV Circles
+local fovCircleSilent, fovCircleAimbot
+do
+    local ok1, c1 = pcall(function()
+        local c = Drawing.new("Circle")
+        c.Thickness = 1; c.NumSides = 64; c.Filled = false
+        c.Transparency = 0.75; c.Color = Color3.fromRGB(255, 255, 255); c.Visible = false
+        return c
+    end)
+    if ok1 then fovCircleSilent = c1 end
+    local ok2, c2 = pcall(function()
+        local c = Drawing.new("Circle")
+        c.Thickness = 1; c.NumSides = 64; c.Filled = false
+        c.Transparency = 0.75; c.Color = Color3.fromRGB(80, 180, 255); c.Visible = false
+        return c
+    end)
+    if ok2 then fovCircleAimbot = c2 end
+end
+
+-- Camera controller
+local camCtrl = nil
+task.spawn(function()
+    task.wait(0.5)
+    pcall(function()
+        local ctrl = LP.PlayerScripts:FindFirstChild("Controllers")
+        local cm = ctrl and ctrl:FindFirstChild("CameraController")
+        if cm then
+            local ok, r = pcall(require, cm)
+            if ok and type(r) == "table" then camCtrl = r end
+        end
+    end)
+end)
+
+local function isKeyActive(kb)
+    if not kb or kb == "None" then return true end
+    if typeof(kb) == "EnumItem" then
+        if kb.EnumType == Enum.KeyCode then
+            return UserInputService:IsKeyDown(kb) and not UserInputService:GetFocusedTextBox()
+        end
+        if kb.EnumType == Enum.UserInputType then
+            return UserInputService:IsMouseButtonPressed(kb) and not UserInputService:GetFocusedTextBox()
+        end
+    end
+    return true
+end
+
+-- =====================================================
+-- HIT LOG (HdX 스타일, 최적화)
+-- =====================================================
+local HitLogGui = Instance.new("ScreenGui")
+HitLogGui.Name = "HydronHitLog"
+HitLogGui.ResetOnSpawn = false
+HitLogGui.DisplayOrder = 100
+pcall(function()
+    if syn and syn.protect_gui then syn.protect_gui(HitLogGui) end
+end)
+pcall(function()
+    HitLogGui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+end)
+if not HitLogGui.Parent then
+    HitLogGui.Parent = LP:WaitForChild("PlayerGui")
+end
+
+local HitLogContainer = Instance.new("Frame")
+HitLogContainer.Name = "Container"
+HitLogContainer.BackgroundTransparency = 1
+HitLogContainer.Position = UDim2.new(0, 20, 0, 80)
+HitLogContainer.Size = UDim2.new(0, 300, 0, 400)
+HitLogContainer.Parent = HitLogGui
+
+local HitLogLayout = Instance.new("UIListLayout")
+HitLogLayout.Padding = UDim.new(0, 4)
+HitLogLayout.SortOrder = Enum.SortOrder.LayoutOrder
+HitLogLayout.Parent = HitLogContainer
+
+local HitLogEntries = {}
+
+local function pushHitLog(plr, dmg, partName)
+    if not Ragebot.Enabled then return end
+
+    local entry = Instance.new("Frame")
+    entry.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    entry.BorderSizePixel = 0
+    entry.Size = UDim2.new(0, 260, 0, 26)
+    entry.Position = UDim2.new(0, -300, 0, 0)
+    entry.BackgroundTransparency = 0.15
+    entry.Parent = HitLogContainer
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = entry
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = 1
+    stroke.Parent = entry
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -12, 1, 0)
+    label.Position = UDim2.new(0, 6, 0, 0)
+    label.Font = Enum.Font.Code
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextStrokeTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.Text = string.format("%s | %d | %s", plr.Name, math.floor(dmg), partName or "?")
+    label.Parent = entry
+
+    table.insert(HitLogEntries, 1, entry)
+
+    -- [최적화] TweenService 사용 (폴링 제거)
+    local tweenService = game:GetService("TweenService")
+    local info = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    tweenService:Create(entry, info, { Position = UDim2.new(0, 0, 0, 0) }):Play()
+
+    while #HitLogEntries > 8 do
+        local old = table.remove(HitLogEntries)
+        if old then
+            local outInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            tweenService:Create(old, outInfo, {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, -50, 0, 0),
+            }):Play()
+            task.delay(0.16, function() if old then old:Destroy() end end)
+        end
+    end
+
+    task.delay(5, function()
+        if entry and entry.Parent then
+            local outInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            tweenService:Create(entry, outInfo, {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, -100, 0, 0),
+            }):Play()
+            task.delay(0.32, function() if entry then entry:Destroy() end end)
+            local idx = table.find(HitLogEntries, entry)
+            if idx then table.remove(HitLogEntries, idx) end
+        end
+    end)
+end
+
+local DamageLastHP = {}
+local function hookDamage(plr)
+    if plr == LP then return end
+    local function onChar(char)
+        local hum = char:WaitForChild("Humanoid", 8)
+        if not hum then return end
+        DamageLastHP[plr] = hum.Health
+        hum.HealthChanged:Connect(function(h)
+            local prev = DamageLastHP[plr] or h
+            DamageLastHP[plr] = h
+            if h < prev and h > 0 then
+                local dmg = prev - h
+                local lastShot = getgenv().HydronLastShotAt or 0
+                if tick() - lastShot < 2.5 then
+                    pushHitLog(plr, dmg, "Head")
+                end
+            end
+        end)
+    end
+    if plr.Character then onChar(plr.Character) end
+    plr.CharacterAdded:Connect(onChar)
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do hookDamage(plr) end
+Players.PlayerAdded:Connect(hookDamage)
+
+-- =====================================================
+-- RAGEBOT HUD
+-- =====================================================
+local RagebotHUD = { Gui = nil, TargetLabel = nil, AmmoLabel = nil }
+local function createRagebotHUD()
+    if RagebotHUD.Gui and RagebotHUD.Gui.Parent then return end
+    local pg = LP:FindFirstChild("PlayerGui")
+    if not pg then return end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "HydronRagebotHUD"
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 1000000
+    gui.IgnoreGuiInset = true
+    gui.Parent = pg
+
+    local targetLbl = Instance.new("TextLabel")
+    targetLbl.AnchorPoint = Vector2.new(0.5, 1)
+    targetLbl.Position = UDim2.new(0.5, 0, 1, -120)
+    targetLbl.Size = UDim2.new(0, 600, 0, 20)
+    targetLbl.BackgroundTransparency = 1
+    targetLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    targetLbl.TextStrokeTransparency = 0.4
+    targetLbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+    targetLbl.Font = Enum.Font.GothamBold
+    targetLbl.TextSize = 16
+    targetLbl.Text = ""
+    targetLbl.TextXAlignment = Enum.TextXAlignment.Center
+    targetLbl.Parent = gui
+
+    local ammoLbl = Instance.new("TextLabel")
+    ammoLbl.AnchorPoint = Vector2.new(0.5, 1)
+    ammoLbl.Position = UDim2.new(0.5, 0, 1, -100)
+    ammoLbl.Size = UDim2.new(0, 600, 0, 18)
+    ammoLbl.BackgroundTransparency = 1
+    ammoLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    ammoLbl.TextStrokeTransparency = 0.4
+    ammoLbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+    ammoLbl.Font = Enum.Font.Gotham
+    ammoLbl.TextSize = 14
+    ammoLbl.Text = ""
+    ammoLbl.TextXAlignment = Enum.TextXAlignment.Center
+    ammoLbl.Parent = gui
+
+    RagebotHUD.Gui = gui
+    RagebotHUD.TargetLabel = targetLbl
+    RagebotHUD.AmmoLabel = ammoLbl
+end
+
+local function destroyRagebotHUD()
+    if RagebotHUD.Gui then pcall(function() RagebotHUD.Gui:Destroy() end) end
+    RagebotHUD.Gui = nil
+    RagebotHUD.TargetLabel = nil
+    RagebotHUD.AmmoLabel = nil
+end
+
+local function getAmmoInfo()
+    local item = getItem()
+    if not item then return nil, nil end
+    local data = rawget(item, "Data")
+    local mag = data and rawget(data, "Ammo")
+    local reserve = data and rawget(data, "AmmoReserve")
+    if type(mag) ~= "number" then
+        pcall(function()
+            if type(item.Get) == "function" then
+                mag = item:Get("Ammo") or item:Get("CurrentAmmo")
+            end
+        end)
+    end
+    if type(reserve) ~= "number" then
+        pcall(function()
+            if type(item.Get) == "function" then
+                reserve = item:Get("AmmoReserve")
+            end
+        end)
+    end
+    return mag, reserve
+end
+
+local function stopRagebot()
+    Ragebot.Enabled = false
+    Ragebot.CurrentTarget = nil
+    Ragebot.SavedCF = nil
+    Ragebot.SavedVel = nil
+    Ragebot.SavedRotVel = nil
+    pcall(function() RunService:UnbindFromRenderStep("HydronRagebotRestore") end)
+    destroyRagebotHUD()
+    for _, e in ipairs(HitLogEntries) do pcall(function() e:Destroy() end) end
+    table.clear(HitLogEntries)
+    table.clear(DamageLastHP)
+end
+
+local function getClosestRagebotTarget()
+    local myRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    local myPos = myRoot.Position
+    local closest, closestDist = nil, math.huge
+    local players = getPlayersCached()
+    for i = 1, #players do
+        local plr = players[i]
+        if isEnemy(plr, Ragebot.TeamCheck) then
+            if not (Ragebot.ImmuneCheck and isTargetImmune(plr)) then
+                if not (Ragebot.AntiKatana and shouldIgnoreKatanaTarget(plr)) then
+                    if not (Ragebot.AntiMine and isTargetNearTripmine(plr)) then
+                        local char = plr.Character
+                        local root = char and char:FindFirstChild("HumanoidRootPart")
+                        local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HitboxHead"))
+                        if root and head then
+                            local d = (myPos - root.Position).Magnitude
+                            if d < closestDist then
+                                closestDist = d
+                                closest = plr
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- =====================================================
+-- ESP (최적화)
+-- =====================================================
+local function createESPObjects()
+    local obj = {
+        box = Drawing.new("Square"),
+        boxOutline = Drawing.new("Square"),
+        boxInner = Drawing.new("Square"),
+        name = Drawing.new("Text"),
+        health = Drawing.new("Text"),
+        tool = Drawing.new("Text"),
+        distance = Drawing.new("Text"),
+        skeletonLines = {},
+    }
+    obj.box.Thickness = 1
+    obj.box.Filled = false
+    obj.boxOutline.Thickness = 3
+    obj.boxOutline.Color = Color3.new(0, 0, 0)
+    obj.boxOutline.Filled = false
+    obj.boxInner.Thickness = 1
+    obj.boxInner.Filled = false
+    obj.boxInner.Transparency = 0.6
+    obj.name.Size = 14; obj.name.Center = true; obj.name.Outline = true
+    obj.health.Size = 12; obj.health.Center = true; obj.health.Outline = true
+    obj.health.Color = Color3.fromRGB(0, 255, 0)
+    obj.tool.Size = 12; obj.tool.Center = true; obj.tool.Outline = true
+    obj.tool.Color = Color3.fromRGB(200, 200, 200)
+    obj.distance.Size = 12; obj.distance.Center = true; obj.distance.Outline = true
+    obj.distance.Color = Color3.fromRGB(200, 200, 200)
+    for i = 1, 15 do
+        local line = Drawing.new("Line")
+        line.Thickness = 1
+        line.Color = Color3.new(1, 1, 1)
+        obj.skeletonLines[i] = line
+    end
+    return obj
+end
+
+local function hideESPObjects(obj)
+    obj.box.Visible = false
+    obj.boxOutline.Visible = false
+    obj.boxInner.Visible = false
+    obj.name.Visible = false
+    obj.health.Visible = false
+    obj.tool.Visible = false
+    obj.distance.Visible = false
+    for _, line in ipairs(obj.skeletonLines) do line.Visible = false end
+end
+
+local function destroyESPObjects(obj)
+    pcall(function() obj.box:Remove() end)
+    pcall(function() obj.boxOutline:Remove() end)
+    pcall(function() obj.boxInner:Remove() end)
+    pcall(function() obj.name:Remove() end)
+    pcall(function() obj.health:Remove() end)
+    pcall(function() obj.tool:Remove() end)
+    pcall(function() obj.distance:Remove() end)
+    for _, line in ipairs(obj.skeletonLines) do pcall(function() line:Remove() end) end
+end
+
+local R15_BONES = {
+    {"UpperTorso", "Head"}, {"UpperTorso", "LowerTorso"},
+    {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
+    {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
+    {"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
+    {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"},
+}
+local R6_BONES = {
+    {"Torso", "Head"}, {"Torso", "Left Arm"}, {"Torso", "Right Arm"},
+    {"Torso", "Left Leg"}, {"Torso", "Right Leg"},
+}
+
+local _boneCache = {}
+local function resolveBone(char, name)
+    local key = char
+    local c = _boneCache[key]
+    if not c then c = {}; _boneCache[key] = c end
+    if c[name] and c[name].Parent then return c[name] end
+    local p = char:FindFirstChild(name)
+    if p and p:IsA("BasePart") then c[name] = p; return p end
+    local aliases = {
+        ["Left Arm"] = {"LeftArm", "LeftUpperArm"},
+        ["Right Arm"] = {"RightArm", "RightUpperArm"},
+        ["Left Leg"] = {"LeftLeg", "LeftUpperLeg"},
+        ["Right Leg"] = {"RightLeg", "RightUpperLeg"},
+        ["Torso"] = {"UpperTorso", "LowerTorso"},
+    }
+    for _, alt in ipairs(aliases[name] or {}) do
+        local f = char:FindFirstChild(alt)
+        if f and f:IsA("BasePart") then c[name] = f; return f end
+    end
+    return nil
+end
+
+local function worldToViewport(pos)
+    local cam = workspace.CurrentCamera
+    if not cam then return Vector2.zero, false end
+    local v, on = cam:WorldToViewportPoint(pos)
+    return Vector2.new(v.X, v.Y), on and v.Z > 0
+end
+
+local function getESPColor(plr, char)
+    if not ESP.UseVisibilityColor then return ESP.VisibleColor end
+    local head = resolveHitPart(char, "Head")
+    if not head then return ESP.HiddenColor end
+    local ok = wallCheckPass(head, char)
+    return ok and ESP.VisibleColor or ESP.HiddenColor
+end
+
+local function getPlayerToolName(plr)
+    local fc = getFighterController()
+    if not fc then return "" end
+    local ok, fighter = pcall(function() return fc:GetFighter(plr) end)
+    if ok and fighter then
+        local item = fighter.EquippedItem
+        if item then
+            if type(item.Get) == "function" then
+                local ok2, name = pcall(item.Get, item, "Name")
+                if ok2 and name then return name end
+            end
+            return item.Name or ""
+        end
+    end
+    return ""
+end
+
+local function updateESP(plr, obj)
+    local char = plr.Character
+    if not char or not char.Parent then hideESPObjects(obj) return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local head = char:FindFirstChild("Head")
+    if not hum or not root or not head then hideESPObjects(obj) return end
+    if hum.Health <= 0 then hideESPObjects(obj) return end
+
+    local myRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    local dist = myRoot and (myRoot.Position - root.Position).Magnitude or 0
+    if dist > ESP.MaxDistance then hideESPObjects(obj) return end
+
+    local headScreen, headOn = worldToViewport(head.Position + Vector3.new(0, 0.7, 0))
+    local bottomScreen, bottomOn = worldToViewport(root.Position - Vector3.new(0, 2.8, 0))
+    if not headOn or not bottomOn then hideESPObjects(obj) return end
+
+    local height = math.abs(bottomScreen.Y - headScreen.Y)
+    local width = height * 0.55
+    local posX = headScreen.X - width * 0.5
+    local posY = math.min(headScreen.Y, bottomScreen.Y)
+
+    local color = getESPColor(plr, char)
+
+    if ESP.Box then
+        obj.boxOutline.Position = Vector2.new(posX - 1, posY - 1)
+        obj.boxOutline.Size = Vector2.new(width + 2, height + 2)
+        obj.boxOutline.Visible = true
+        obj.box.Position = Vector2.new(posX, posY)
+        obj.box.Size = Vector2.new(width, height)
+        obj.box.Color = color
+        obj.box.Visible = true
+        obj.boxInner.Position = Vector2.new(posX + 1, posY + 1)
+        obj.boxInner.Size = Vector2.new(width - 2, height - 2)
+        obj.boxInner.Visible = true
+    else
+        obj.box.Visible = false
+        obj.boxOutline.Visible = false
+        obj.boxInner.Visible = false
+    end
+
+    if ESP.Skeleton then
+        local bones = (hum.RigType == Enum.HumanoidRigType.R15) and R15_BONES or R6_BONES
+        for i, boneSet in ipairs(bones) do
+            local partA = resolveBone(char, boneSet[1])
+            local partB = resolveBone(char, boneSet[2])
+            local line = obj.skeletonLines[i]
+            if partA and partB and line then
+                local va, vaOk = worldToViewport(partA.Position)
+                local vb, vbOk = worldToViewport(partB.Position)
+                if vaOk and vbOk then
+                    line.From = va; line.To = vb
+                    line.Color = color; line.Visible = true
+                else line.Visible = false end
+            elseif line then line.Visible = false end
+        end
+        for i = #bones + 1, #obj.skeletonLines do obj.skeletonLines[i].Visible = false end
+    else
+        for _, line in ipairs(obj.skeletonLines) do line.Visible = false end
+    end
+
+    local yOffset = posY - 16
+    if ESP.Name then
+        obj.name.Text = plr.Name
+        obj.name.Position = Vector2.new(headScreen.X, yOffset)
+        obj.name.Visible = true
+        yOffset = yOffset - 15
+    else obj.name.Visible = false end
+
+    if ESP.Health then
+        obj.health.Text = string.format("%d", math.floor(hum.Health))
+        obj.health.Position = Vector2.new(headScreen.X, yOffset)
+        obj.health.Visible = true
+        yOffset = yOffset - 14
+    else obj.health.Visible = false end
+
+    if ESP.Tool then
+        local toolName = getPlayerToolName(plr)
+        if toolName ~= "" then
+            obj.tool.Text = "[" .. toolName .. "]"
+            obj.tool.Position = Vector2.new(headScreen.X, posY + height + 14)
+            obj.tool.Visible = true
+        else obj.tool.Visible = false end
+    else obj.tool.Visible = false end
+
+    if ESP.Distance then
+        obj.distance.Text = string.format("%dm", math.floor(dist))
+        obj.distance.Position = Vector2.new(headScreen.X, posY + height + 28)
+        obj.distance.Visible = true
+    else obj.distance.Visible = false end
+end
+
+-- =====================================================
+-- UNIFIED RENDER LOOP (모든 렌더 로직 1개로 통합)
+-- =====================================================
+local _aimLast = 0
+local _espLast = 0
+local _rageHudLast = 0
+
+RunService.RenderStepped:Connect(function(dt)
+    local now = os.clock()
+
+    -- === Aimbot + FOV (최대 240Hz) ===
+    if now - _aimLast >= 1/240 then
+        _aimLast = now
+        local cam = workspace.CurrentCamera
+        if cam then
+            local vp = cam.ViewportSize
+            local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+
+            if fovCircleSilent then
+                fovCircleSilent.Position = center
+                fovCircleSilent.Radius = Silent.FOV
+                fovCircleSilent.Visible = Silent.ShowFOV and Silent.Enabled
+            end
+            if fovCircleAimbot then
+                fovCircleAimbot.Position = center
+                fovCircleAimbot.Radius = Aimbot.FOV
+                fovCircleAimbot.Visible = Aimbot.ShowFOV and Aimbot.Enabled
+            end
+
+            if Aimbot.Enabled and isKeyActive(Aimbot.Keybind) then
+                local tgt = getBestTargetFOV(Aimbot.FOV, Aimbot.TeamCheck, Aimbot.WallCheck, Aimbot.HitPart)
+                if tgt then
+                    local origin = cam.CFrame.Position
+                    local goal = CFrame.lookAt(origin, tgt.Position)
+                    local smooth = math.clamp(Aimbot.Smoothness, 0.02, 1)
+                    local strength = math.clamp(Aimbot.Strength / 100, 0.1, 5)
+                    local alpha = math.clamp(smooth * 40 * dt * strength, 0.05, 1)
+                    if strength >= 4.5 then alpha = 1 end
+                    local newCF = cam.CFrame:Lerp(goal, alpha)
+                    if camCtrl and type(camCtrl.MimicRotation) == "function" then
+                        pcall(function() camCtrl:MimicRotation(newCF) end)
+                    else
+                        cam.CFrame = newCF
+                    end
+                end
+            end
+        end
+    end
+
+    -- === Ragebot HUD (30Hz) ===
+    if now - _rageHudLast >= 1/30 then
+        _rageHudLast = now
+        if Ragebot.Enabled then
+            if not RagebotHUD.Gui or not RagebotHUD.Gui.Parent then createRagebotHUD() end
+            if RagebotHUD.Gui then
+                RagebotHUD.Gui.Enabled = true
+                local targetText = "ragebot: nil"
+                local target = Ragebot.CurrentTarget
+                if target and target.Character then
+                    local hum = target.Character:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.Health > 0 then
+                        targetText = "ragebot: " .. (target.DisplayName or target.Name)
+                    end
+                end
+                if RagebotHUD.TargetLabel then RagebotHUD.TargetLabel.Text = targetText end
+
+                local mag, reserve = getAmmoInfo()
+                local magStr = mag and tostring(math.floor(mag)) or "-"
+                local reserveStr = (type(reserve) == "number" and reserve < math.huge) and tostring(math.floor(reserve)) or "inf"
+                if RagebotHUD.AmmoLabel then
+                    RagebotHUD.AmmoLabel.Text = string.format("ammo: %s/%s", magStr, reserveStr)
+                end
+            end
+        elseif RagebotHUD.Gui and RagebotHUD.Gui.Parent then
+            RagebotHUD.Gui.Enabled = false
+        end
+    end
+
+    -- === ESP (30Hz) ===
+    if now - _espLast >= 1/30 then
+        _espLast = now
+        if not ESP.Enabled then
+            for _, obj in pairs(ESP.Objects) do hideESPObjects(obj) end
+        else
+            for _, plr in ipairs(getPlayersCached()) do
+                if plr ~= LP then
+                    if isEnemy(plr, ESP.TeamCheck) then
+                        if not ESP.Objects[plr] then
+                            ESP.Objects[plr] = createESPObjects()
+                        end
+                        pcall(updateESP, plr, ESP.Objects[plr])
+                    elseif ESP.Objects[plr] then
+                        hideESPObjects(ESP.Objects[plr])
+                    end
+                end
+            end
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    local obj = ESP.Objects[plr]
+    if obj then destroyESPObjects(obj); ESP.Objects[plr] = nil end
+    _boneCache[plr.Character] = nil
+end)
+
+-- =====================================================
+-- UNIFIED HEARTBEAT LOOP (모든 로직 1개로 통합)
+-- =====================================================
+local _silentLast = 0
+local _triggerArmed = false
+local _triggerArmedAt = 0
+local _triggerLastFire = 0
+
+RunService.Heartbeat:Connect(function()
+    -- === Fight state (30Hz 내부 스로틀) ===
+    refreshLocalFightState()
+
+    -- === Silent Aim 자동 발사 ===
+    if Silent.Enabled and not Silent.AutoShoot then
+        if isKeyActive(Silent.Keybind) then
+            local t = silentTarget()
+            if t then fireSilentAt(t) end
+        end
+    end
+
+    -- === Triggerbot ===
+    if Trigger.Enabled and isKeyActive(Trigger.Keybind) then
+        local cam = workspace.CurrentCamera
+        if cam then
+            local vp = cam.ViewportSize
+            local ray = cam:ViewportPointToRay(vp.X * 0.5, vp.Y * 0.5)
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            local exclude = {cam}
+            if LP.Character then exclude[#exclude+1] = LP.Character end
+            params.FilterDescendantsInstances = exclude
+            params.IgnoreWater = true
+            local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+            if result and result.Instance then
+                local model = result.Instance:FindFirstAncestorOfClass("Model")
+                local plr = model and Players:GetPlayerFromCharacter(model)
+                if plr and isEnemy(plr, Trigger.TeamCheck) and not isTargetImmune(plr) then
+                    local now = tick()
+                    local reaction = (Trigger.ReactionTime or 50) / 1000
+                    if not _triggerArmed then
+                        _triggerArmed = true
+                        _triggerArmedAt = now
+                    elseif (now - _triggerArmedAt) >= reaction and (now - _triggerLastFire) >= 0.05 then
+                        _triggerLastFire = now
+                        _triggerArmed = false
+                        local hitPart = resolveHitPart(plr.Character, Config.HitPart) or result.Instance
+                        fireSilentAt(hitPart)
+                    end
+                else
+                    _triggerArmed = false
+                end
+            else
+                _triggerArmed = false
+            end
+        end
+    else
+        _triggerArmed = false
+    end
+
+    -- === Ragebot ===
+    if Ragebot.Enabled then
+        if isKeyActive(Ragebot.Keybind) and canRage() then
+            local char = LP.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if root and hum and hum.Health > 0 then
+                local target = getClosestRagebotTarget()
+                if target then
+                    Ragebot.CurrentTarget = target
+                    local targetChar = target.Character
+                    local targetHead = targetChar and (targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HitboxHead"))
+                    if targetHead then
+                        local destCF = CFrame.lookAt(
+                            targetHead.Position + Vector3.new(0, Ragebot.HeightOffset, 0),
+                            targetHead.Position
+                        )
+                        if Ragebot.Desync then
+                            Ragebot.SavedCF = root.CFrame
+                            Ragebot.SavedVel = root.AssemblyLinearVelocity
+                            Ragebot.SavedRotVel = root.AssemblyAngularVelocity
+                            pcall(function()
+                                root.CFrame = destCF
+                                root.AssemblyLinearVelocity = Vector3.zero
+                                root.AssemblyAngularVelocity = Vector3.zero
+                            end)
+                            pcall(function() RunService:UnbindFromRenderStep("HydronRagebotRestore") end)
+                            RunService:BindToRenderStep("HydronRagebotRestore", 101, function()
+                                local c = LP.Character
+                                local r = c and c:FindFirstChild("HumanoidRootPart")
+                                if r and Ragebot.SavedCF then
+                                    r.CFrame = Ragebot.SavedCF
+                                    pcall(function()
+                                        r.AssemblyLinearVelocity = Ragebot.SavedVel or Vector3.zero
+                                        r.AssemblyAngularVelocity = Ragebot.SavedRotVel or Vector3.zero
+                                    end)
+                                end
+                                pcall(function() RunService:UnbindFromRenderStep("HydronRagebotRestore") end)
+                            end)
+                        else
+                            pcall(function()
+                                root.CFrame = destCF
+                                root.AssemblyLinearVelocity = Vector3.zero
+                                root.AssemblyAngularVelocity = Vector3.zero
+                            end)
+                        end
+
+                        local now = tick()
+                        if (now - Ragebot.LastFire) >= Ragebot.Interval then
+                            Ragebot.LastFire = now
+                            local item = getItem()
+                            if item then
+                                local oid = itemId(item)
+                                local ui = getUseItem()
+                                if oid and ui and ui.Parent then
+                                    local look = CFrame.lookAt(destCF.Position, targetHead.Position)
+                                    local data = {
+                                        [utf8.char(1)] = {
+                                            [utf8.char(0)] = encCF(look),
+                                            [utf8.char(1)] = encCF(look),
+                                            [utf8.char(2)] = targetHead,
+                                            [utf8.char(3)] = encCF(CFrame.new(0.43, 0.25, 0.42)),
+                                        },
+                                    }
+                                    local startEnum = toEnum("StartShooting")
+                                    if startEnum then
+                                        pcall(function() ui:FireServer(oid, startEnum, data, nil) end)
+                                        getgenv().HydronLastShotAt = tick()
+                                    end
+                                end
+                            end
+                        end
+                    end
+                else
+                    Ragebot.CurrentTarget = nil
+                    Ragebot.SavedCF = nil
+                    Ragebot.SavedVel = nil
+                    Ragebot.SavedRotVel = nil
+                end
+            end
+        end
+    else
+        Ragebot.SavedCF = nil
+        Ragebot.SavedVel = nil
+        Ragebot.SavedRotVel = nil
+    end
+end)
+
+-- =====================================================
+-- FLY
+-- =====================================================
+local function stopFly()
+    if Fly.Conn then pcall(function() Fly.Conn:Disconnect() end) Fly.Conn = nil end
+    if Fly.Attachment then pcall(function() Fly.Attachment:Destroy() end) Fly.Attachment = nil end
+    if Fly.LinearVelocity then pcall(function() Fly.LinearVelocity:Destroy() end) Fly.LinearVelocity = nil end
+    if Fly.AlignOrientation then pcall(function() Fly.AlignOrientation:Destroy() end) Fly.AlignOrientation = nil end
+    Fly.MobileTouchId = nil; Fly.MobileOrigin = nil; Fly.MobileCurrent = nil; Fly.MobileVerticalUp = false
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum.PlatformStand = false end) end
+end
+
+local MOBILE_JOYSTICK_ZONE_RATIO = 0.45
+local function getMobileFlyDir()
+    if not Fly.MobileOrigin or not Fly.MobileCurrent then return Vector3.zero end
+    local delta = Fly.MobileCurrent - Fly.MobileOrigin
+    if delta.Magnitude < 4 then return Vector3.zero end
+    local nx = math.clamp(delta.X / 60, -1, 1)
+    local ny = math.clamp(delta.Y / 60, -1, 1)
+    local cam = workspace.CurrentCamera
+    if not cam then return Vector3.zero end
+    local dir = cam.CFrame.RightVector * nx - cam.CFrame.LookVector * ny
+    if dir.Magnitude > 0 then dir = dir.Unit end
+    return dir
+end
+
+local function startFly()
+    stopFly()
+    local char = LP.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum then return end
+
+    pcall(function() hum.PlatformStand = true end)
+
+    local attach = Instance.new("Attachment")
+    attach.Name = "HydronFlyAttach"
+    attach.Parent = root
+    Fly.Attachment = attach
+
+    local lv = Instance.new("LinearVelocity")
+    lv.Attachment0 = attach
+    lv.MaxForce = math.huge
+    lv.RelativeTo = Enum.ActuatorRelativeTo.World
+    lv.VectorVelocity = Vector3.zero
+    lv.Parent = root
+    Fly.LinearVelocity = lv
+
+    local ao = Instance.new("AlignOrientation")
+    ao.Attachment0 = attach
+    ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    ao.MaxTorque = math.huge
+    ao.Responsiveness = 100
+    ao.Parent = root
+    Fly.AlignOrientation = ao
+
+    Fly.Conn = RunService.Heartbeat:Connect(function()
+        if not Fly.Enabled then stopFly() return end
+        local c = LP.Character
+        local r = c and c:FindFirstChild("HumanoidRootPart")
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if not r or not h or not Fly.LinearVelocity or not Fly.LinearVelocity.Parent then
+            if Fly.Enabled then task.spawn(startFly) end
+            return
+        end
+        local cam = workspace.CurrentCamera
+        if not cam then return end
+        local dir = Vector3.zero
+        if UserInputService.TouchEnabled then
+            local md = getMobileFlyDir()
+            if md.Magnitude > 0 then dir = md end
+        end
+        if UserInputService.KeyboardEnabled then
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+        end
+        if Fly.MobileVerticalUp or UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.new(0, 1, 0) end
+        if dir.Magnitude > 1 then dir = dir.Unit end
+        Fly.LinearVelocity.VectorVelocity = dir * Fly.Speed
+        Fly.AlignOrientation.CFrame = CFrame.new(r.Position, r.Position + cam.CFrame.LookVector)
+        pcall(function() h.PlatformStand = true end)
+        attach.WorldPosition = r.Position
+    end)
+end
+
+UserInputService.TouchStarted:Connect(function(touch, processed)
+    if not Fly.Enabled or processed or Fly.MobileTouchId ~= nil then return end
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    local vp = cam.ViewportSize
+    if touch.Position.X > vp.X * MOBILE_JOYSTICK_ZONE_RATIO then return end
+    if touch.Position.Y < vp.Y * 0.2 then return end
+    Fly.MobileTouchId = touch
+    Fly.MobileOrigin = touch.Position
+    Fly.MobileCurrent = touch.Position
+end)
+UserInputService.TouchMoved:Connect(function(touch)
+    if not Fly.Enabled or Fly.MobileTouchId ~= touch then return end
+    Fly.MobileCurrent = touch.Position
+end)
+UserInputService.TouchEnded:Connect(function(touch)
+    if Fly.MobileTouchId == touch then
+        Fly.MobileTouchId = nil; Fly.MobileOrigin = nil; Fly.MobileCurrent = nil
+    end
+end)
+
+-- =====================================================
+-- RANK CHARM
+-- =====================================================
+local function RankCharmGetCosmeticLibrary()
+    if RankCharm.CatalogCache.CosmeticLibrary then return RankCharm.CatalogCache.CosmeticLibrary end
+    local mod = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("CosmeticLibrary")
+    if not mod then return nil end
+    local ok, lib = pcall(require, mod)
+    if ok and type(lib) == "table" then
+        RankCharm.CatalogCache.CosmeticLibrary = lib
+        return lib
+    end
+    return nil
+end
+
+local function RankCharmGetWeaponNames()
+    if RankCharm.CatalogCache.WeaponNames then return RankCharm.CatalogCache.WeaponNames end
+    local lib = RankCharmGetCosmeticLibrary()
+    local cosmetics = lib and lib.Cosmetics
+    local names, seen = {}, {}
+    if type(cosmetics) == "table" then
+        for _, data in pairs(cosmetics) do
+            if type(data) == "table" and data.Type == "Skin" and type(data.ItemName) == "string" and data.ItemName ~= "" and not seen[data.ItemName] then
+                seen[data.ItemName] = true
+                names[#names + 1] = data.ItemName
+            end
+        end
+    end
+    table.sort(names)
+    RankCharm.CatalogCache.WeaponNames = names
+    return names
+end
+
+local function RankCharmGetRankCatalog()
+    if RankCharm.CatalogCache.Rank then return RankCharm.CatalogCache.Rank end
+    local modules = ReplicatedStorage:FindFirstChild("Modules")
+    local mod = modules and modules:FindFirstChild("SeasonLibrary")
+    if not mod then return nil end
+    local ok, seasonLibrary = pcall(require, mod)
+    if not ok or type(seasonLibrary) ~= "table" then return nil end
+    local current = seasonLibrary.CurrentSeason
+    local profile = type(current) == "table" and current.RankProfile or nil
+    local ranksOrder = type(profile) == "table" and profile.RanksOrder or nil
+    local ranks = type(profile) == "table" and profile.Ranks or nil
+    local seasonsByVersion = seasonLibrary.SeasonsByVersion
+    if type(ranksOrder) ~= "table" or type(ranks) ~= "table" or type(seasonsByVersion) ~= "table" then
+        return nil
+    end
+    local ranksByName = {}
+    for _, rankName in ipairs(ranksOrder) do
+        local rd = ranks[rankName]
+        if type(rankName) == "string" and type(rd) == "table" then
+            ranksByName[rankName] = { Name = rankName, RequiredELO = rd.RequiredELO, RequiresLeaderboard = rd.RequiredELOLeaderboardRanking ~= nil }
+        end
+    end
+    local versions = {}
+    for v in pairs(seasonsByVersion) do versions[#versions + 1] = v end
+    table.sort(versions, function(a, b) return (tonumber(a) or 0) < (tonumber(b) or 0) end)
+    local seasonEntries, seasonLabels, seasonByLabel = {}, {}, {}
+    for _, version in ipairs(versions) do
+        local sd = seasonsByVersion[version]
+        if type(sd) == "table" then
+            local charmName = "Season " .. tostring(version)
+            local label = "Season " .. tostring(version)
+            seasonEntries[#seasonEntries + 1] = { Version = version, CharmName = charmName, Label = label }
+            seasonLabels[#seasonLabels + 1] = label
+            seasonByLabel[label] = charmName
+        end
+    end
+    RankCharm.CatalogCache.Rank = {
+        RankOrder = ranksOrder, RanksByName = ranksByName,
+        SeasonEntries = seasonEntries, SeasonLabels = seasonLabels, SeasonByLabel = seasonByLabel,
+    }
+    return RankCharm.CatalogCache.Rank
+end
+
+local function RankCharmResolveGameRank(want)
+    local cat = RankCharmGetRankCatalog()
+    if not cat then return want end
+    if cat.RanksByName[want] then return want end
+    local wantLower = string.lower(tostring(want)):gsub("%s+", "")
+    for _, rn in ipairs(cat.RankOrder or {}) do
+        if string.lower(rn):gsub("%s+", "") == wantLower then return rn end
+    end
+    for _, rn in ipairs(cat.RankOrder or {}) do
+        if string.find(string.lower(rn), string.lower(tostring(want)), 1, true) then return rn end
+    end
+    return want
+end
+
+local function RankCharmBuildPayload(name)
+    if not name or name == "" then return nil end
+    local lib = RankCharmGetCosmeticLibrary()
+    local source = lib and lib.Cosmetics and lib.Cosmetics[name]
+    local data = {}
+    if type(source) == "table" then for k, v in pairs(source) do data[k] = v end end
+    data.Name = name
+    data.Type = data.Type or "Charm"
+    data.Seed = data.Seed or math.random(1, 1000000)
+    data.Inverted = false
+    return data
+end
+
+local function RankCharmBuildMetadata(charmName)
+    if type(charmName) ~= "string" or charmName:sub(1, 7) ~= "Season " then return nil end
+    local override = RankCharm.RankOverrides[charmName]
+    if type(override) ~= "table" then return nil end
+    local cat = RankCharmGetRankCatalog()
+    local rankKey = RankCharmResolveGameRank(override.rankName)
+    local rank = cat and cat.RanksByName[rankKey]
+    if not rank then return { SeasonELO = 0, SeasonLeaderboardRank = override.leaderboardRank } end
+    local lb = override.leaderboardRank
+    if string.lower(rank.Name):find("unranked", 1, true) then return { SeasonELO = nil, SeasonLeaderboardRank = lb } end
+    if rank.RequiresLeaderboard and lb == nil then lb = 1 end
+    return { SeasonELO = rank.RequiredELO, SeasonLeaderboardRank = lb }
+end
+
+local function RankCharmPatchPayload(payload)
+    if type(payload) ~= "table" then return nil end
+    local meta = RankCharmBuildMetadata(payload.Name)
+    if not meta then return nil end
+    local p = table.clone(payload)
+    p.Metadata = meta
+    return p
+end
+
+local function RankCharmApplyNow()
+    if not RankCharm.Enabled or not RankCharm.Ready or not RankCharm.Season then return end
+    local realRank = RankCharmResolveGameRank(RankCharm.Rank or "Unranked")
+    RankCharm.RankOverrides[RankCharm.Season] = {
+        rankName = realRank,
+        leaderboardRank = RankCharm.Leaderboard and math.floor(RankCharm.Leaderboard) or nil,
+    }
+    if RankCharm.Weapon == "All Weapons" then
+        for _, w in ipairs(RankCharmGetWeaponNames()) do
+            RankCharm.SelectedCharmByWeapon[w] = RankCharm.Season
+        end
+    else
+        RankCharm.SelectedCharmByWeapon[RankCharm.Weapon] = RankCharm.Season
+    end
+end
+
+task.spawn(function()
+    pcall(function()
+        local lps = LP:WaitForChild("PlayerScripts", 5)
+        local controllers = lps and lps:FindFirstChild("Controllers")
+        local dctrlMod = controllers and controllers:FindFirstChild("PlayerDataController")
+        local dctrl = dctrlMod and require(dctrlMod)
+        if not dctrl then return end
+
+        local oget = dctrl.Get
+        if type(oget) == "function" then
+            dctrl.Get = function(self, key)
+                local data = oget(self, key)
+                if key == "CosmeticInventory" then
+                    local proxy = {}
+                    if data then for k, v in pairs(data) do proxy[k] = v end end
+                    local lib = RankCharmGetCosmeticLibrary()
+                    if lib and lib.Cosmetics then
+                        for name in pairs(lib.Cosmetics) do proxy[name] = true end
+                    end
+                    return proxy
+                end
+                return data
+            end
+        end
+
+        local ogetwep = dctrl.GetWeaponData
+        if type(ogetwep) == "function" then
+            dctrl.GetWeaponData = function(self, wname)
+                local ok, data = pcall(ogetwep, self, wname)
+                if not ok or not data then return nil end
+                local merged = table.clone(data)
+                merged.Name = wname
+                local charmName = RankCharm.SelectedCharmByWeapon[wname]
+                if charmName then
+                    local payload = RankCharmBuildPayload(charmName)
+                    if payload then merged.Charm = RankCharmPatchPayload(payload) or payload end
+                else
+                    merged.Charm = RankCharmPatchPayload(merged.Charm) or merged.Charm
+                end
+                return merged
+            end
+        end
+
+        local clientRoot = lps:FindFirstChild("Modules") and lps.Modules:FindFirstChild("ClientReplicatedClasses")
+        local vmmod = clientRoot and clientRoot:FindFirstChild("ClientFighter")
+            and clientRoot.ClientFighter:FindFirstChild("ClientItem")
+            and clientRoot.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
+        if vmmod then
+            local cvm = require(vmmod)
+            local onew = cvm.new
+            cvm.new = function(rdata, cliitm)
+                local wplr = cliitm.ClientFighter and cliitm.ClientFighter.Player
+                local wname = cliitm.Name
+                if wplr == LP and RankCharm.SelectedCharmByWeapon[wname] then
+                    local rcls = require(ReplicatedStorage.Modules.ReplicatedClass)
+                    local dk = rcls:ToEnum("Data")
+                    rdata[dk] = rdata[dk] or {}
+                    local charmPayload = RankCharmBuildPayload(RankCharm.SelectedCharmByWeapon[wname])
+                    if charmPayload then
+                        charmPayload = RankCharmPatchPayload(charmPayload) or charmPayload
+                        rdata[dk][rcls:ToEnum("Charm")] = charmPayload
+                    end
+                end
+                return onew(rdata, cliitm)
+            end
+        end
+    end)
+end)
+
+-- =====================================================
+-- UI
+-- =====================================================
+local Tabbox = Tabs.Main:AddLeftTabbox()
+local SilentTab = Tabbox:AddTab("Silent Aim")
+local SilentCustomTab = Tabbox:AddTab("Silent Custom")
+
+SilentTab:AddToggle("SilentEnabled", {
+    Text = "Enable Silent Aim", Default = false,
+    Callback = function(v) Silent.Enabled = v end,
+}):AddKeyPicker("SilentKeybind", {
+    Default = "None", NoUI = false, Text = "Silent Keybind",
+    Modes = { "Always", "Toggle", "Hold" },
+    Callback = function(v) if typeof(v) == "string" then Silent.Keybind = v end end,
+})
+SilentTab:AddToggle("SilentTeamCheck", { Text = "Team Check", Default = true, Callback = function(v) Silent.TeamCheck = v end })
+SilentTab:AddToggle("SilentWallCheck", { Text = "Wall Check", Default = false, Callback = function(v) Silent.WallCheck = v end })
+SilentTab:AddDropdown("SilentHitPart", {
+    Text = "Hit Part", Values = HIT_PART_LIST, Default = 1, Multi = false,
+    Callback = function(v) Config.HitPart = v end,
+})
+SilentCustomTab:AddToggle("SilentShowFOV", { Text = "Show FOV", Default = true, Callback = function(v) Silent.ShowFOV = v end })
+SilentCustomTab:AddSlider("SilentFOV", {
+    Text = "FOV Radius", Default = 300, Min = 10, Max = 750, Rounding = 0, Compact = true,
+    Callback = function(v) Silent.FOV = v end,
+})
+
+local AimbotTabbox = Tabs.Main:AddRightTabbox()
+local AimbotTab = AimbotTabbox:AddTab("Aimbot")
+local AimbotCustomTab = AimbotTabbox:AddTab("Aimbot Custom")
+
+AimbotTab:AddToggle("AimbotEnabled", {
+    Text = "Enable Aimbot", Default = false,
+    Callback = function(v) Aimbot.Enabled = v end,
+}):AddKeyPicker("AimbotKeybind", {
+    Default = "None", NoUI = false, Text = "Aimbot Keybind",
+    Modes = { "Always", "Toggle", "Hold" },
+    Callback = function(v) if typeof(v) == "string" then Aimbot.Keybind = v end end,
+})
+AimbotTab:AddToggle("AimbotTeamCheck", { Text = "Team Check", Default = true, Callback = function(v) Aimbot.TeamCheck = v end })
+AimbotTab:AddToggle("AimbotWallCheck", { Text = "Wall Check", Default = false, Callback = function(v) Aimbot.WallCheck = v end })
+AimbotTab:AddDropdown("AimbotHitPart", {
+    Text = "Hit Part", Values = HIT_PART_LIST, Default = 1, Multi = false,
+    Callback = function(v) Aimbot.HitPart = v end,
+})
+AimbotTab:AddSlider("AimbotSmoothness", {
+    Text = "Smoothness", Default = 0.35, Min = 0.05, Max = 1, Rounding = 2, Compact = true,
+    Callback = function(v) Aimbot.Smoothness = v end,
+})
+AimbotTab:AddSlider("AimbotStrength", {
+    Text = "Aim Strength", Default = 100, Min = 10, Max = 500, Rounding = 0, Compact = true,
+    Callback = function(v) Aimbot.Strength = v end,
+})
+AimbotCustomTab:AddToggle("AimbotShowFOV", { Text = "Show FOV", Default = false, Callback = function(v) Aimbot.ShowFOV = v end })
+AimbotCustomTab:AddSlider("AimbotFOV", {
+    Text = "FOV Radius", Default = 150, Min = 10, Max = 750, Rounding = 0, Compact = true,
+    Callback = function(v) Aimbot.FOV = v end,
+})
+
+local TriggerGroup = Tabs.Main:AddLeftGroupbox("Triggerbot")
+TriggerGroup:AddToggle("TriggerEnabled", {
+    Text = "Enable Triggerbot", Default = false,
+    Tooltip = "크로스헤어가 적 머리 위에 있으면 자동으로 발사",
+    Callback = function(v) Trigger.Enabled = v end,
+}):AddKeyPicker("TriggerKeybind", {
+    Default = "None", NoUI = false, Text = "Trigger Keybind",
+    Modes = { "Always", "Toggle", "Hold" },
+    Callback = function(v) if typeof(v) == "string" then Trigger.Keybind = v end end,
+})
+TriggerGroup:AddToggle("TriggerTeamCheck", { Text = "Team Check", Default = true, Callback = function(v) Trigger.TeamCheck = v end })
+TriggerGroup:AddSlider("TriggerReactionTime", {
+    Text = "Reaction Time (ms)", Default = 50, Min = 0, Max = 500, Rounding = 0, Compact = true,
+    Callback = function(v) Trigger.ReactionTime = v end,
+})
+
+local RagebotGroup = Tabs.Main:AddRightGroupbox("Ragebot")
+RagebotGroup:AddToggle("RagebotEnabled", {
+    Text = "Enable Ragebot", Default = false,
+    Tooltip = "머리 위로 텔포 + 사일런트 에임 자동 발사. HUD + Hit Log 자동 활성화.",
+    Callback = function(v)
+        Ragebot.Enabled = v
+        if v then createRagebotHUD() else stopRagebot() end
+    end,
+}):AddKeyPicker("RagebotKeybind", {
+    Default = "None", NoUI = false, Text = "Ragebot Keybind",
+    Modes = { "Always", "Toggle", "Hold" },
+    Callback = function(v) if typeof(v) == "string" then Ragebot.Keybind = v end end,
+})
+RagebotGroup:AddToggle("RagebotTeamCheck", { Text = "Team Check", Default = true, Callback = function(v) Ragebot.TeamCheck = v end })
+RagebotGroup:AddToggle("RagebotImmuneCheck", {
+    Text = "Immune Check", Default = true,
+    Tooltip = "켜면 상대가 면역일 때 발사 안 함. 끄면 면역이어도 발사.",
+    Callback = function(v) Ragebot.ImmuneCheck = v end,
+})
+RagebotGroup:AddToggle("RagebotAntiKatana", {
+    Text = "Anti Katana", Default = true,
+    Tooltip = "켜면 상대가 카타나 반사 중일 때 발사 안 함. (카타나 뚫는 무기는 예외)",
+    Callback = function(v) Ragebot.AntiKatana = v end,
+})
+RagebotGroup:AddToggle("RagebotAntiMine", {
+    Text = "Anti Mine", Default = true,
+    Tooltip = "켜면 상대가 지뢰 근처에 있을 때 발사 안 함.",
+    Callback = function(v) Ragebot.AntiMine = v end,
+})
+RagebotGroup:AddToggle("RagebotDesync", {
+    Text = "Desync", Default = true,
+    Tooltip = "텔포 후 원래 위치로 같은 프레임 복원",
+    Callback = function(v) Ragebot.Desync = v end,
+})
+RagebotGroup:AddSlider("RagebotHeightOffset", {
+    Text = "Height Offset", Default = 2.5, Min = 0, Max = 10, Rounding = 1, Compact = true,
+    Callback = function(v) Ragebot.HeightOffset = v end,
+})
+RagebotGroup:AddSlider("RagebotInterval", {
+    Text = "Fire Interval", Default = 0, Min = 0, Max = 1, Rounding = 2, Compact = true,
+    Callback = function(v) Ragebot.Interval = v end,
+})
+
+-- Unlock All (defer로 UI 프레임 드랍 방지)
+local VisualsGroup = Tabs.Visuals:AddLeftGroupbox("Unlock All")
+VisualsGroup:AddToggle("SkinUnlockerToggle", {
+    Text = "Unlock All Skins", Default = false,
+    Callback = function(v)
+        task.defer(function()
+            Unlocker.Active = v
+            if not v then
+                for _, fn in ipairs(Unlocker.RestoreFns) do pcall(fn) end
+                Unlocker.RestoreFns = {}
+                Library:Notify("Skin unlocker off. Rejoin to fully reset.", 3)
+                return
+            end
+
+            local silentWas = Silent.Enabled
+            local rageWas = Ragebot.Enabled
+            Silent.Enabled = false
+            Ragebot.Enabled = false
+
+            local ok = pcall(function()
+                local modules = ReplicatedStorage:WaitForChild("Modules", 2)
+                local enumLib = require(modules:WaitForChild("EnumLibrary", 2))
+                pcall(function() enumLib:WaitForEnumBuilder() end)
+                local cosLib = require(modules:WaitForChild("CosmeticLibrary", 2))
+                local datCtrl = require(LP.PlayerScripts.Controllers:WaitForChild("PlayerDataController", 2))
+
+                local eq, favs = {}, {}
+                local allTypes = {
+                    Skin = true, Wrap = true, Charm = true, Dance = true, Emote = true,
+                    Finisher = true, FinisherEffect = true, FinisherSound = true, KillEffect = true,
+                }
+                local function isAllType(c) return c and allTypes[c.Type] == true end
+
+                local function mkCosmetic(nm, ctype)
+                    local base = cosLib.Cosmetics[nm]
+                    if not base then return nil end
+                    local d = {}
+                    for k, vv in pairs(base) do d[k] = vv end
+                    d.Name = nm
+                    d.Type = d.Type or ctype
+                    d.Seed = d.Seed or math.random(1, 1000000)
+                    local s, eid = pcall(enumLib.ToEnum, enumLib, nm)
+                    if s and eid then d.Enum = eid; d.ObjectID = d.ObjectID or eid end
+                    return d
+                end
+
+                local cfgFile = "hydron_unlocker_config.json"
+                local saveLock = false
+
+                local function loadCfg()
+                    if not isfile or not readfile then return end
+                    local ok1, ex = pcall(isfile, cfgFile)
+                    if not ok1 or not ex then return end
+                    local ok2, raw = pcall(readfile, cfgFile)
+                    if not ok2 or not raw or raw == "" then return end
+                    local ok3, dec = pcall(HttpService.JSONDecode, HttpService, raw)
+                    if not ok3 or not dec then return end
+                    if dec.favorites then favs = dec.favorites end
+                    if dec.equipped then
+                        eq = {}
+                        for wn, cos in pairs(dec.equipped) do
+                            eq[wn] = {}
+                            for ct, sd in pairs(cos) do
+                                if sd and sd.Name and cosLib.Cosmetics[sd.Name] then
+                                    local cloned = mkCosmetic(sd.Name, ct)
+                                    if cloned then eq[wn][ct] = cloned end
+                                end
+                            end
+                            if not next(eq[wn]) then eq[wn] = nil end
+                        end
+                    end
+                end
+
+                local function saveCfg()
+                    if not writefile or saveLock then return end
+                    saveLock = true
+                    task.spawn(function()
+                        task.wait(0.5)
+                        local out = {}
+                        for wn, cos in pairs(eq) do
+                            out[wn] = {}
+                            for ct, cd in pairs(cos) do
+                                if cd and cd.Name then out[wn][ct] = { Name = cd.Name } end
+                            end
+                        end
+                        local okenc, enc = pcall(HttpService.JSONEncode, HttpService, {
+                            equipped = out, favorites = favs
+                        })
+                        if okenc then pcall(writefile, cfgFile, enc) end
+                        saveLock = false
+                    end)
+                end
+
+                loadCfg()
+
+                local origOwnsCosmetic = cosLib.OwnsCosmetic
+                local origOwnsNormally = cosLib.OwnsCosmeticNormally
+                local origOwnsUniversally = cosLib.OwnsCosmeticUniversally
+                local origOwnsForWeapon = cosLib.OwnsCosmeticForWeapon
+
+                cosLib.OwnsCosmetic = function(_, _, nm) return isAllType(cosLib.Cosmetics[nm]) end
+                cosLib.OwnsCosmeticNormally = cosLib.OwnsCosmetic
+                cosLib.OwnsCosmeticUniversally = cosLib.OwnsCosmetic
+                cosLib.OwnsCosmeticForWeapon = cosLib.OwnsCosmetic
+
+                table.insert(Unlocker.RestoreFns, function()
+                    cosLib.OwnsCosmetic = origOwnsCosmetic
+                    cosLib.OwnsCosmeticNormally = origOwnsNormally
+                    cosLib.OwnsCosmeticUniversally = origOwnsUniversally
+                    cosLib.OwnsCosmeticForWeapon = origOwnsForWeapon
+                end)
+
+                local origGet = datCtrl.Get
+                datCtrl.Get = function(self, key)
+                    local val = origGet(self, key)
+                    if key == "CosmeticInventory" then
+                        local proxy = {}
+                        if val then
+                            for k, vv in pairs(val) do
+                                if isAllType(cosLib.Cosmetics[k]) then proxy[k] = vv end
+                            end
+                        end
+                        return setmetatable(proxy, {
+                            __index = function(_, k)
+                                if isAllType(cosLib.Cosmetics[k]) then return true end
+                                return nil
+                            end,
+                        })
+                    end
+                    if key == "FavoritedCosmetics" then
+                        local res = val and table.clone(val) or {}
+                        for wep, fv in pairs(favs) do
+                            res[wep] = res[wep] or {}
+                            for nm, isFav in pairs(fv) do
+                                if isAllType(cosLib.Cosmetics[nm]) then res[wep][nm] = isFav end
+                            end
+                        end
+                        return res
+                    end
+                    return val
+                end
+                table.insert(Unlocker.RestoreFns, function() datCtrl.Get = origGet end)
+
+                if hookmetamethod then
+                    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                    local dataRem = remotes and remotes:FindFirstChild("Data")
+                    local equipRem = dataRem and dataRem:FindFirstChild("EquipCosmetic")
+                    local favRem = dataRem and dataRem:FindFirstChild("FavoriteCosmetic")
+                    if equipRem then
+                        local onc
+                        onc = hookmetamethod(game, "__namecall", function(self, ...)
+                            if not Unlocker.Active then return onc(self, ...) end
+                            if getnamecallmethod() ~= "FireServer" then return onc(self, ...) end
+                            if self == UseItem then return onc(self, ...) end
+                            local a = {...}
+                            if self == equipRem then
+                                local wn, ct, cn = a[1], a[2], a[3]
+                                eq[wn] = eq[wn] or {}
+                                if not cn or cn == "None" or cn == "" then
+                                    eq[wn][ct] = nil
+                                    if not next(eq[wn]) then eq[wn] = nil end
+                                else
+                                    local cloned = mkCosmetic(cn, ct)
+                                    if cloned then eq[wn][ct] = cloned end
+                                end
+                                saveCfg()
+                                return
+                            end
+                            if self == favRem then
+                                local cos = cosLib.Cosmetics[a[2]]
+                                if cos and isAllType(cos) then
+                                    favs[a[1]] = favs[a[1]] or {}
+                                    favs[a[1]][a[2]] = a[3] or nil
+                                    saveCfg()
+                                end
+                                return
+                            end
+                            return onc(self, ...)
+                        end)
+                    end
+                end
+
+                pcall(function()
+                    local cliItem = require(LP.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem)
+                    if cliItem and cliItem._CreateViewModel then
+                        local origCVM = cliItem._CreateViewModel
+                        cliItem._CreateViewModel = function(self, vmRef)
+                            if not Unlocker.Active then return origCVM(self, vmRef) end
+                            local wn = self.Name
+                            local wp = self.ClientFighter and self.ClientFighter.Player
+                            if wp == LP and eq[wn] then
+                                local dk = self:ToEnum("Data")
+                                if vmRef[dk] then
+                                    for ct, cd in pairs(eq[wn]) do
+                                        local en = self:ToEnum(ct)
+                                        if en then vmRef[dk][en] = cd end
+                                    end
+                                    if eq[wn].Skin then vmRef[dk][self:ToEnum("Name")] = eq[wn].Skin.Name end
+                                elseif vmRef.Data then
+                                    for ct, cd in pairs(eq[wn]) do vmRef.Data[ct] = cd end
+                                end
+                            end
+                            return origCVM(self, vmRef)
+                        end
+                        table.insert(Unlocker.RestoreFns, function() cliItem._CreateViewModel = origCVM end)
+                    end
+                end)
+
+                pcall(function()
+                    local vmMod = LP.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
+                    if vmMod then
+                        local CVM = require(vmMod)
+                        local origNew = CVM.new
+                        CVM.new = function(repData, cliItm)
+                            if not Unlocker.Active then return origNew(repData, cliItm) end
+                            local wp = cliItm.ClientFighter and cliItm.ClientFighter.Player
+                            local wn = cliItm.Name
+                            if wp == LP and eq[wn] then
+                                local RC = require(ReplicatedStorage.Modules.ReplicatedClass)
+                                local dk = RC:ToEnum("Data")
+                                repData[dk] = repData[dk] or {}
+                                for ct, cd in pairs(eq[wn]) do
+                                    local en = RC:ToEnum(ct)
+                                    if en then repData[dk][en] = cd end
+                                end
+                            end
+                            return origNew(repData, cliItm)
+                        end
+                        table.insert(Unlocker.RestoreFns, function() CVM.new = origNew end)
+                    end
+                end)
+            end)
+
+            if ok then Library:Notify("All Skins Unlocked", 3)
+            else Library:Notify("Skin unlock failed", 3); Unlocker.Active = false end
+
+            Silent.Enabled = silentWas
+            Ragebot.Enabled = rageWas
+        end)
+    end,
+})
+
+-- ESP
+local ESPGroup = Tabs.Visuals:AddRightGroupbox("ESP")
+ESPGroup:AddToggle("ESPEnabled", { Text = "Enable ESP", Default = false, Callback = function(v) ESP.Enabled = v end })
+ESPGroup:AddToggle("ESPBox", { Text = "Box", Default = true, Callback = function(v) ESP.Box = v end })
+ESPGroup:AddToggle("ESPSkeleton", { Text = "Skeleton", Default = true, Callback = function(v) ESP.Skeleton = v end })
+ESPGroup:AddToggle("ESPHealth", { Text = "Health", Default = true, Callback = function(v) ESP.Health = v end })
+ESPGroup:AddToggle("ESPTool", { Text = "Tool", Default = true, Callback = function(v) ESP.Tool = v end })
+ESPGroup:AddToggle("ESPName", { Text = "Name", Default = true, Callback = function(v) ESP.Name = v end })
+ESPGroup:AddToggle("ESPDistance", { Text = "Distance", Default = true, Callback = function(v) ESP.Distance = v end })
+ESPGroup:AddToggle("ESPTeamCheck", { Text = "Team Check", Default = true, Callback = function(v) ESP.TeamCheck = v end })
+ESPGroup:AddToggle("ESPUseVisibilityColor", {
+    Text = "Use Visibility Color", Default = true,
+    Tooltip = "벽 뒤에 있으면 Hidden Color, 보이면 Visible Color",
+    Callback = function(v) ESP.UseVisibilityColor = v end,
+})
+ESPGroup:AddSlider("ESPMaxDistance", {
+    Text = "Max Distance", Default = 1000, Min = 50, Max = 5000, Rounding = 0, Compact = true,
+    Callback = function(v) ESP.MaxDistance = v end,
+})
+ESPGroup:AddLabel("Visible Color"):AddColorPicker("ESPVisibleColor", {
+    Default = Color3.fromRGB(0, 255, 0), Title = "Visible Color",
+    Callback = function(v) ESP.VisibleColor = v end,
+})
+ESPGroup:AddLabel("Hidden Color"):AddColorPicker("ESPHiddenColor", {
+    Default = Color3.fromRGB(255, 0, 0), Title = "Hidden Color",
+    Callback = function(v) ESP.HiddenColor = v end,
+})
+
+-- Rank Charm (토글형)
+local RankCharmGroup = Tabs.Visuals:AddLeftGroupbox("Rank Charm")
+RankCharmGroup:AddToggle("RankCharmEnabled", {
+    Text = "Enable Rank Charm", Default = false,
+    Tooltip = "끄면 모든 시즌 참 오버라이드 해제됨 (재접속 권장)",
+    Callback = function(v)
+        RankCharm.Enabled = v
+        if v then
+            RankCharm.Ready = true
+            RankCharmApplyNow()
+        else
+            table.clear(RankCharm.SelectedCharmByWeapon)
+            table.clear(RankCharm.RankOverrides)
+            Library:Notify("Rank Charm disabled. Rejoin to fully reset.", 3)
+        end
+    end,
+})
+RankCharmGroup:AddDropdown("RankCharmWeapon", {
+    Text = "Weapon",
+    Values = (function()
+        local list = {"All Weapons"}
+        for _, w in ipairs(RankCharmGetWeaponNames()) do list[#list + 1] = w end
+        return list
+    end)(),
+    Default = 1, Multi = false, Searchable = true,
+    Callback = function(v) if RankCharm.Enabled then RankCharm.Weapon = v; RankCharmApplyNow() end end,
+})
+RankCharmGroup:AddDropdown("RankCharmSeason", {
+    Text = "Season",
+    Values = (function()
+        local cat = RankCharmGetRankCatalog()
+        return cat and cat.SeasonLabels or {"Season 0"}
+    end)(),
+    Default = 1, Multi = false, Searchable = true,
+    Callback = function(v)
+        if not RankCharm.Enabled then return end
+        local cat = RankCharmGetRankCatalog()
+        if cat and cat.SeasonByLabel then RankCharm.Season = cat.SeasonByLabel[v] end
+        RankCharmApplyNow()
+    end,
+})
+RankCharmGroup:AddDropdown("RankCharmRank", {
+    Text = "Rank",
+    Values = (function()
+        local cat = RankCharmGetRankCatalog()
+        if cat and cat.RankOrder then
+            local list = {}
+            for _, r in ipairs(cat.RankOrder) do list[#list + 1] = r end
+            return list
+        end
+        return {"Unranked", "Bronze 1", "Bronze 2", "Bronze 3", "Silver 1", "Silver 2", "Silver 3",
+                "Gold 1", "Gold 2", "Gold 3", "Platinum 1", "Platinum 2", "Platinum 3",
+                "Diamond 1", "Diamond 2", "Diamond 3", "Onyx 1", "Onyx 2", "Onyx 3",
+                "Nemesis", "Arch Nemesis"}
+    end)(),
+    Default = 1, Multi = false, Searchable = true,
+    Callback = function(v) if RankCharm.Enabled then RankCharm.Rank = v; RankCharmApplyNow() end end,
+})
+RankCharmGroup:AddInput("RankCharmLB", {
+    Text = "Leaderboard Rank", Default = "", Numeric = true, Finished = false, Placeholder = "",
+    Callback = function(v)
+        if not RankCharm.Enabled then return end
+        RankCharm.Leaderboard = tonumber(v)
+        RankCharmApplyNow()
+    end,
+})
+RankCharmGroup:AddButton("Reset", function()
+    if RankCharm.Weapon == "All Weapons" then
+        table.clear(RankCharm.SelectedCharmByWeapon)
+        table.clear(RankCharm.RankOverrides)
+    else
+        RankCharm.SelectedCharmByWeapon[RankCharm.Weapon] = nil
+    end
+    Library:Notify("Rank Charm reset", 2)
+end)
+
+task.spawn(function()
+    task.wait(1)
+    local cat = RankCharmGetRankCatalog()
+    if cat and cat.SeasonEntries and #cat.SeasonEntries > 0 then
+        RankCharm.Season = cat.SeasonEntries[1].CharmName
+    end
+    if not RankCharm.Weapon then RankCharm.Weapon = "All Weapons" end
+    if not RankCharm.Rank then RankCharm.Rank = "Unranked" end
+end)
+
+-- Fly
+local MiscFlyGroup = Tabs.Misc:AddLeftGroupbox("Fly")
+MiscFlyGroup:AddToggle("FlyEnabled", {
+    Text = "Enable Fly", Default = false,
+    Callback = function(v)
+        Fly.Enabled = v
+        if v then startFly() else stopFly() end
+    end,
+})
+MiscFlyGroup:AddSlider("FlySpeed", {
+    Text = "Fly Speed", Default = 60, Min = 10, Max = 300, Rounding = 0, Compact = true,
+    Callback = function(v) Fly.Speed = v end,
+})
+
+local function hookMobileVerticalButtons()
+    local pg = LP:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local touchGui = pg:FindFirstChild("TouchGui")
+    if not touchGui then
+        task.spawn(function() task.wait(2); hookMobileVerticalButtons() end)
+        return
+    end
+    local jumpBtn = touchGui:FindFirstChild("JumpButton", true)
+    if jumpBtn and jumpBtn:IsA("GuiButton") then
+        jumpBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then Fly.MobileVerticalUp = true end
+        end)
+        jumpBtn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then Fly.MobileVerticalUp = false end
+        end)
+    end
+end
+hookMobileVerticalButtons()
+
+LP.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if Fly.Enabled then startFly() end
+    if Ragebot.Enabled and RagebotHUD.Gui then RagebotHUD.Gui.Enabled = true end
+    _fcCache = nil
+    _fcCacheAt = 0
+    _boneCache = {}
+end)
+
+local MenuGroup = Tabs.UISettings:AddLeftGroupbox("Menu")
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", {
+    Default = "RightShift", NoUI = true, Text = "Menu keybind",
+})
+
+Library.ToggleKeybind = Options.MenuKeybind
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+ThemeManager:SetFolder("HydronX")
+SaveManager:SetFolder("HydronX/Configs")
+SaveManager:BuildConfigSection(Tabs.UISettings)
+ThemeManager:ApplyToTab(Tabs.UISettings)
+SaveManager:LoadAutoloadConfig()
+
+Library:Notify("HydronX Loaded Successfully!", 2)
