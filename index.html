@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Script Auth System</title>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #1e293b; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); width: 100%; max-width: 400px; text-align: center; }
+        input { width: 100%; padding: 0.75rem; margin: 1rem 0; border: 1px solid #334155; background: #0f172a; color: white; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 0.75rem; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #2563eb; }
+        textarea { width: 100%; height: 120px; margin-top: 1rem; background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 6px; padding: 0.5xl; box-sizing: border-box; display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Script Authentication</h2>
+        <p>인증 키를 입력하세요</p>
+        <input type="text" id="keyInput" placeholder="Enter your key...">
+        <button onclick="verifyKey()">스크립트 확인</button>
+        <textarea id="resultOutput" readonly></textarea>
+    </div>
+
+    <script>
+        function verifyKey() {
+            const key = document.getElementById('keyInput').value;
+            const output = document.getElementById('resultOutput');
+            
+            // 테스트용 임시 키 (나중에 디스코드 봇이나 DB랑 연동할 수 있어요)
+            const VALID_KEY = "solar_secret_123";
+
+            if (key === VALID_KEY) {
+                output.style.display = 'block';
+                output.value = 'loadstring(game:HttpGet("https://solarshubmaker-celi.github.io"))() -- 실제 스크립트 내용';
+                alert('인증 성공!');
+            } else {
+                output.style.display = 'none';
+                alert('잘못된 키입니다!');
+            }
+        }
+    </script>
+</body>
+</html>
