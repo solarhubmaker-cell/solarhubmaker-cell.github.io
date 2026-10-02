@@ -6,14 +6,10 @@
 </head>
 <body>
     소스를 볼 권한이 없습니다.
+</body>
+</html>
 
-    <script>
-        // 로블록스 실행기(loadstring)가 이 페이지를 가져갈 때 키 인증을 확인하도록 숨겨둔 루아 코드 영역입니다.
-        // 일반 브라우저에서는 이 자바스크립트가 실행되지 않거나 사람이 볼 수 없도록 처리됩니다.
-    </script>
-    
-    <!-- 실질적인 루아 스크립트 데이터 영역 -->
-    <script type="text/plain" id="lua-source">
+<script type="text/plain">
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -49,6 +45,4 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
-    </script>
-</body>
-</html>
+</script>
