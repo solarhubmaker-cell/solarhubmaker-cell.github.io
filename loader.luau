@@ -1,0 +1,35 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local old = playerGui:FindFirstChild("CuteGirlGui")
+if old then old:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CuteGirlGui"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(0, 500, 0, 120)
+textLabel.Position = UDim2.new(0.5, -250, 0.5, -60)
+textLabel.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
+textLabel.BackgroundTransparency = 0.3
+textLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+textLabel.TextScaled = true
+textLabel.Font = Enum.Font.GothamBlack
+textLabel.Text = "큐트걸 바보 💖"
+textLabel.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 20)
+corner.Parent = textLabel
+
+-- 깜빡임
+task.spawn(function()
+    while textLabel.Parent do
+        textLabel.Visible = not textLabel.Visible
+        task.wait(0.5)
+    end
+end)
