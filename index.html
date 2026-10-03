@@ -7,10 +7,6 @@
 <body>
     소스를 볼 권한이 없습니다.
 
-    <!-- 
-      이 아래에 숨겨둔 코드는 일반 웹 브라우저로 접속했을 때는 보이지 않고, 
-      실행기(loadstring)가 이 주소를 불러갔을 때만 텍스트로 읽혀서 실행됩니다.
-    -->
     <script type="text/plain" id="source">
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
@@ -33,14 +29,13 @@ textLabel.BackgroundTransparency = 0.3
 textLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
 textLabel.TextScaled = true
 textLabel.Font = Enum.Font.GothamBlack
-textLabel.Text = "큐트걸 바보 💖"
+textLabel.Text = "큐트걸 바보"
 textLabel.Parent = screenGui
 
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 20)
 corner.Parent = textLabel
 
--- 깜빡임
 task.spawn(function()
     while textLabel.Parent do
         textLabel.Visible = not textLabel.Visible
